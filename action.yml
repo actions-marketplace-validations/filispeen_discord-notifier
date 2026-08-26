@@ -44,7 +44,7 @@ runs:
 
         LINES_ADDED=$(git diff --numstat "$DIFF_BASE" "$CURRENT_SHA" | awk '{added+=$1} END {print added+0}')
         LINES_REMOVED=$(git diff --numstat "$DIFF_BASE" "$CURRENT_SHA" | awk '{removed+=$2} END {print removed+0}')
-        FILES_CHANGED=$(git diff --name-only "$DIFF_BASE" "$CURRENT_SHA" | wc -l)
+        FILES_CHANGED=$(git diff --name-only "$DIFF_BASE" "$CURRENT_SHA" | wc -l | tr -d ' ')
 
         FILE_LIST=$(git diff --numstat "$DIFF_BASE" "$CURRENT_SHA" | head -n "$MAX_FILES" | while read added removed file; do
           FILE_URL="${SERVER_URL}/${REPO}/blob/${CURRENT_SHA}/${file}"
@@ -55,7 +55,7 @@ runs:
           fi
         done)
 
-        TOTAL_FILES=$(git diff --name-only "$DIFF_BASE" "$CURRENT_SHA" | wc -l)
+        TOTAL_FILES=$(git diff --name-only "$DIFF_BASE" "$CURRENT_SHA" | wc -l | tr -d ' ')
         if [ "$TOTAL_FILES" -gt "$MAX_FILES" ]; then
           MORE_FILES=$((TOTAL_FILES - MAX_FILES))
           FILE_LIST="${FILE_LIST}"$'\n'"...and ${MORE_FILES} more file(s)"
