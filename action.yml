@@ -13,7 +13,7 @@ inputs:
   max-files:
     description: Max number of changed files to list
     required: false
-    default: "6"
+    default: "8"
 
 runs:
   using: composite
