@@ -32,7 +32,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: filispeen/discord-commit-notify@v1
+      - uses: filispeen/discord-notifier@v1
         with:
           webhook-url: ${{ secrets.DISCORD_WEBHOOK_URL }}
 ```
