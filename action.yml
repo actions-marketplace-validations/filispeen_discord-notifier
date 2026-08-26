@@ -47,7 +47,7 @@ runs:
         FILES_CHANGED=$(git diff --name-only "$DIFF_BASE" "$CURRENT_SHA" | wc -l | tr -d ' ')
 
         FILE_LIST=$(git diff --numstat "$DIFF_BASE" "$CURRENT_SHA" | head -n "$MAX_FILES" | while read added removed file; do
-          FILE_URL="${SERVER_URL}/${REPO}/blob/${CURRENT_SHA}/${file}"
+          FILE_URL="${SERVER_URL}/${REPO}/blob/${COMMIT_SHORT_SHA}/${file}"
           if [ "$added" = "-" ]; then
             echo "- [\`${file}\`](${FILE_URL}) (binary)"
           else
