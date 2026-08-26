@@ -13,7 +13,7 @@ inputs:
   max-files:
     description: Max number of changed files to list
     required: false
-    default: "10"
+    default: "6"
 
 runs:
   using: composite
@@ -49,9 +49,9 @@ runs:
         FILE_LIST=$(git diff --numstat "$DIFF_BASE" "$CURRENT_SHA" | head -n "$MAX_FILES" | while read added removed file; do
           FILE_URL="${SERVER_URL}/${REPO}/blob/${CURRENT_SHA}/${file}"
           if [ "$added" = "-" ]; then
-            echo "- [${file}](${FILE_URL}) (binary)"
+            echo "- [\`${file}\`](${FILE_URL}) (binary)"
           else
-            echo "- [${file}](${FILE_URL}) +${added} -${removed}"
+            echo "- [\`${file}\`](${FILE_URL}) +${added} -${removed}"
           fi
         done)
 
@@ -129,7 +129,7 @@ runs:
                 { name: "Files Changed", value: ($files + " file(s)"), inline: true },
                 { name: "Lines Added", value: ("```diff\n+" + $added + "\n```"), inline: true },
                 { name: "Lines Removed", value: ("```diff\n-" + $removed + "\n```"), inline: true },
-                { name: "Changed Files", value: $file_list, inline: false }
+                { name: "Changed Files", value: (if ($file_list | length) > 1024 then ($file_list[0:1000] + "\n... (truncated)") else $file_list end), inline: false }
               ],
               timestamp: $timestamp,
               footer: {
