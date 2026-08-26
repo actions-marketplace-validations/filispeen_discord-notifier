@@ -1,0 +1,148 @@
+name: Discord Commit Notification
+description: Sends a rich Discord embed for the latest commit on push
+author: filispeen
+
+inputs:
+  webhook-url:
+    description: Discord webhook URL
+    required: true
+  color:
+    description: Embed color as decimal integer
+    required: false
+    default: "5814783"
+  max-files:
+    description: Max number of changed files to list
+    required: false
+    default: "10"
+
+runs:
+  using: composite
+  steps:
+    - name: Get commit info
+      id: commit_info
+      shell: bash
+      env:
+        BEFORE_SHA: ${{ github.event.before }}
+        CURRENT_SHA: ${{ github.sha }}
+        SERVER_URL: ${{ github.server_url }}
+        REPO: ${{ github.repository }}
+        REF_NAME: ${{ github.ref_name }}
+        MAX_FILES: ${{ inputs.max-files }}
+      run: |
+        COMMIT_MESSAGE=$(git log -1 --pretty=%B)
+        COMMIT_AUTHOR=$(git log -1 --pretty=%an)
+        COMMIT_AUTHOR_USERNAME=$(git log -1 --pretty=%ae | cut -d'@' -f1)
+        COMMIT_SHORT_SHA=$(git log -1 --pretty=%h)
+        COMMIT_URL="${SERVER_URL}/${REPO}/commit/${CURRENT_SHA}"
+        AUTHOR_URL="${SERVER_URL}/${COMMIT_AUTHOR_USERNAME}"
+        BRANCH_URL="${SERVER_URL}/${REPO}/tree/${REF_NAME}"
+
+        DIFF_BASE="$BEFORE_SHA"
+        if [ -z "$DIFF_BASE" ] || [ "$DIFF_BASE" = "0000000000000000000000000000000000000000" ]; then
+          DIFF_BASE=$(git rev-parse "${CURRENT_SHA}^" 2>/dev/null || echo "$CURRENT_SHA")
+        fi
+
+        LINES_ADDED=$(git diff --numstat "$DIFF_BASE" "$CURRENT_SHA" | awk '{added+=$1} END {print added+0}')
+        LINES_REMOVED=$(git diff --numstat "$DIFF_BASE" "$CURRENT_SHA" | awk '{removed+=$2} END {print removed+0}')
+        FILES_CHANGED=$(git diff --name-only "$DIFF_BASE" "$CURRENT_SHA" | wc -l)
+
+        FILE_LIST=$(git diff --numstat "$DIFF_BASE" "$CURRENT_SHA" | head -n "$MAX_FILES" | while read added removed file; do
+          FILE_URL="${SERVER_URL}/${REPO}/blob/${CURRENT_SHA}/${file}"
+          if [ "$added" = "-" ]; then
+            echo "- [${file}](${FILE_URL}) (binary)"
+          else
+            echo "- [${file}](${FILE_URL}) +${added} -${removed}"
+          fi
+        done)
+
+        TOTAL_FILES=$(git diff --name-only "$DIFF_BASE" "$CURRENT_SHA" | wc -l)
+        if [ "$TOTAL_FILES" -gt "$MAX_FILES" ]; then
+          MORE_FILES=$((TOTAL_FILES - MAX_FILES))
+          FILE_LIST="${FILE_LIST}"$'\n'"...and ${MORE_FILES} more file(s)"
+        fi
+
+        if [ ${#COMMIT_MESSAGE} -gt 500 ]; then
+          COMMIT_MESSAGE="${COMMIT_MESSAGE:0:497}..."
+        fi
+
+        {
+          echo "message<<COMMITMSG_EOF"
+          echo "$COMMIT_MESSAGE"
+          echo "COMMITMSG_EOF"
+          echo "author=$COMMIT_AUTHOR"
+          echo "author_url=$AUTHOR_URL"
+          echo "branch_url=$BRANCH_URL"
+          echo "sha=$COMMIT_SHORT_SHA"
+          echo "url=$COMMIT_URL"
+          echo "files=$FILES_CHANGED"
+          echo "lines_added=$LINES_ADDED"
+          echo "lines_removed=$LINES_REMOVED"
+          echo "file_list<<FILELIST_EOF"
+          echo "$FILE_LIST"
+          echo "FILELIST_EOF"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Send Discord notification
+      shell: bash
+      env:
+        DISCORD_WEBHOOK: ${{ inputs.webhook-url }}
+        EMBED_COLOR: ${{ inputs.color }}
+        REPO: ${{ github.repository }}
+        BRANCH: ${{ github.ref_name }}
+        COMMIT_URL: ${{ steps.commit_info.outputs.url }}
+        COMMIT_MESSAGE: ${{ steps.commit_info.outputs.message }}
+        COMMIT_AUTHOR: ${{ steps.commit_info.outputs.author }}
+        AUTHOR_URL: ${{ steps.commit_info.outputs.author_url }}
+        BRANCH_URL: ${{ steps.commit_info.outputs.branch_url }}
+        COMMIT_SHA: ${{ steps.commit_info.outputs.sha }}
+        FILES_CHANGED: ${{ steps.commit_info.outputs.files }}
+        LINES_ADDED: ${{ steps.commit_info.outputs.lines_added }}
+        LINES_REMOVED: ${{ steps.commit_info.outputs.lines_removed }}
+        FILE_LIST: ${{ steps.commit_info.outputs.file_list }}
+      run: |
+        PAYLOAD=$(jq -n \
+          --arg repo "$REPO" \
+          --arg url "$COMMIT_URL" \
+          --arg message "$COMMIT_MESSAGE" \
+          --arg author "$COMMIT_AUTHOR" \
+          --arg author_url "$AUTHOR_URL" \
+          --arg branch "$BRANCH" \
+          --arg branch_url "$BRANCH_URL" \
+          --arg sha "$COMMIT_SHA" \
+          --arg files "$FILES_CHANGED" \
+          --arg added "$LINES_ADDED" \
+          --arg removed "$LINES_REMOVED" \
+          --arg file_list "$FILE_LIST" \
+          --argjson color "$EMBED_COLOR" \
+          --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" \
+          '{
+            avatar_url: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png",
+            embeds: [{
+              title: ("New commit in " + $repo),
+              url: $url,
+              description: $message,
+              color: $color,
+              fields: [
+                { name: "Author", value: ("[" + $author + "](" + $author_url + ")"), inline: true },
+                { name: "Branch", value: ("[" + $branch + "](" + $branch_url + ")"), inline: true },
+                { name: "Commit", value: ("[`" + $sha + "`](" + $url + ")"), inline: true },
+                { name: "Files Changed", value: ($files + " file(s)"), inline: true },
+                { name: "Lines Added", value: ("```diff\n+" + $added + "\n```"), inline: true },
+                { name: "Lines Removed", value: ("```diff\n-" + $removed + "\n```"), inline: true },
+                { name: "Changed Files", value: $file_list, inline: false }
+              ],
+              timestamp: $timestamp,
+              footer: {
+                text: "GitHub Actions",
+                icon_url: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
+              }
+            }]
+          }')
+
+        echo "$PAYLOAD" | jq . > /dev/null
+
+        curl -X POST \
+          -H "Content-Type: application/json" \
+          -d "$PAYLOAD" \
+          "$DISCORD_WEBHOOK" \
+          --fail-with-body || echo "Failed to send Discord notification"
