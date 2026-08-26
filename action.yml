@@ -2,6 +2,10 @@ name: Discord Commit Notification
 description: Sends a rich Discord embed for the latest commit on push
 author: filispeen
 
+branding:
+  icon: message-circle
+  color: blue
+
 inputs:
   webhook-url:
     description: Discord webhook URL
